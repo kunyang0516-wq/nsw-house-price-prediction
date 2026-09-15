@@ -216,3 +216,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Data Fold
+data/
+*.parquet
+*.csv
+
+# Model File
+models/
+*.pkl
+*.joblib
+
+# Venv
+.venv/
+__pycache__/
+.ipynb_checkpoints/
