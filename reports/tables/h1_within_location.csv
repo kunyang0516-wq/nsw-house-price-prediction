@@ -1,0 +1,2 @@
+label,y,x,absorbed,regressors,n,n_clusters,absorbed_levels,coef__log_area,se__log_area,coef,se,ci_low,ci_high
+log price ~ log area | postcode + year FE,log_price,log_area,post_code+year,log_area,800000,591,614,0.24628861944018576,0.007734171009601706,0.24628861944018576,0.007734171009601706,0.23112964426136642,0.26144759461900513

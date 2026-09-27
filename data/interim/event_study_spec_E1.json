@@ -1,0 +1,26 @@
+{
+  "event_id": "E1",
+  "radius_km": 2.0,
+  "control_min_km": 3.0,
+  "window_months": 24,
+  "reference_period": -1,
+  "cluster": "postcode",
+  "outcome": "log_median_unit_price",
+  "treated_variable": "dist_metro_p25",
+  "fallback_variable": "dist_metro",
+  "min_geocoded_points": 3,
+  "robustness_radii": [
+    1.0,
+    3.0
+  ],
+  "robustness_outcomes": [
+    "log_median_price",
+    "n_sales"
+  ],
+  "sa4_filter": [
+    "Sydney - Ryde",
+    "Sydney - Parramatta",
+    "Sydney - Baulkham Hills and Hawkesbury",
+    "Sydney - Blacktown"
+  ]
+}

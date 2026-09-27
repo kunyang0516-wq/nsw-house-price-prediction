@@ -1,0 +1,3 @@
+label,y,x,absorbed,regressors,n,n_clusters,absorbed_levels,coef__log_area,se__log_area,coef,se,ci_low,ci_high,test_value,z_statistic,p_value,coef__log_lag_price,se__log_lag_price
+H2-R0 main elasticity (test beta = 1),log_price,log_area,post_code+year,log_area,800000,591,614,0.24628861944018576,0.007734171009601706,0.24628861944018576,0.007734171009601706,0.23112964426136642,0.26144759461900513,1.0,-97.45212248657388,0.0,,
+H2-R1 + neighbourhood price (bad control),log_price,log_area,post_code+year,log_area+log_lag_price,778476,518,541,0.24912853401777932,0.007634801093599762,0.24912853401777932,0.007634801093599762,0.2341643238743238,0.26409274416123485,1.0,-98.34853020750923,0.0,0.6998797377166233,0.011711194792977223

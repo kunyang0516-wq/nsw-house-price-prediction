@@ -1,0 +1,21 @@
+{
+  "windows": [
+    {
+      "name": "v2010",
+      "start": "2001-01-01",
+      "end": "2010-12-31",
+      "label_as_of": "2010-12-31",
+      "column": "development_type_v2010"
+    },
+    {
+      "name": "v2014",
+      "start": "2011-01-01",
+      "end": "2014-12-31",
+      "label_as_of": "2014-12-31",
+      "column": "development_type_v2014"
+    }
+  ],
+  "min_baseline_sales": 50,
+  "vacant_share_threshold": 15.0,
+  "rule": "vacant share >= threshold and n_base >= min -> Greenfield, else Established, else missing"
+}

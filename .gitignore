@@ -217,17 +217,49 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Data Fold
-data/
+# --- data -------------------------------------------------------------------
+# Exclude the heavy contents rather than the whole `data/` directory: a fully
+# excluded directory cannot contain re-included files (git never descends into
+# it), so `/data/` would also block the small lookup tables the pipeline reads.
+# A bare `data/` is worse still - it also matches `src/data/`.
+/data/raw/
+/data/processed/
 *.parquet
 *.csv
 
 # Model File
-models/
+# Anchored, so it cannot match a future `src/models/`.
+/models/
 *.pkl
 *.joblib
+
+# The small tables that stay in the repository:
+#   data/external/*.csv  - event table and RBA snapshots (pipeline inputs)
+#   data/interim/*.csv   - postcode lookups (pipeline inputs)
+#   reports/tables/*.csv - the evidence every report number traces back to
+# Everything large (raw extract, processed parquet, predictions) stays ignored.
+!data/external/
+!data/external/*.csv
+!data/interim/
+!data/interim/*.csv
+!reports/tables/
+!reports/tables/*.csv
 
 # Venv
 .venv/
 __pycache__/
 .ipynb_checkpoints/
+
+# Archive of unused / superseded files (raw material, original notebook output,
+# team scripts). Not read by src/ or pipelines/; keep it out of the repository.
+# The archive's own README.md documents what is inside and why.
+attic/
+
+# Scratch and test caches
+.pytest_cache/
+pytest-cache-files-*/
+# Anchored to the repository root: an unanchored `_*.py` also matches every
+# `__init__.py` (the glob `_*` matches a leading double underscore too), which
+# would silently drop the entire package structure from the repository.
+/_*.py
+*.log

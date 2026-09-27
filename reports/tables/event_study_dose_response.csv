@@ -1,0 +1,3 @@
+specification,outcome,max_km,coef_post_x_log_dist,se,ci_low,ci_high,p_value,n_obs,n_postcodes,interpretation
+dose_response,log_median_unit_price,5.0,-0.004051474160387974,0.008215954547795957,-0.02015474507406805,0.012051796753292102,0.6219258518590203,1066,22,negative interaction = the post-opening change is larger closer to the station
+dose_response,log_median_unit_price,10.0,-0.015580062797263155,0.004244464856969127,-0.023899213916922644,-0.007260911677603668,0.0002419081535771639,1645,35,negative interaction = the post-opening change is larger closer to the station

@@ -1,0 +1,6 @@
+specification,radius_km,outcome,treated_postcodes,mean_post_coef,pretrend_p_value,n_obs
+main,2.0,log_median_unit_price,11,0.03691029093949961,1.0850337023304846e-06,2270
+radius_1km,1.0,log_median_unit_price,4,0.0016313660693553092,0.8727666690990838,236
+radius_3km,3.0,log_median_unit_price,14,0.037096843244486484,0.000402455062415763,2416
+outcome_log_median_price,2.0,log_median_price,11,0.03825679788981352,1.4741366658466148e-06,2270
+outcome_n_sales,2.0,n_sales,11,1.5559604795671949,0.0,2270

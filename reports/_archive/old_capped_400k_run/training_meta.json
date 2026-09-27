@@ -1,0 +1,78 @@
+{
+  "folds": [
+    "fold0: train 2001-01..2007-12 | embargo 1m | valid 2008-02..2009-01",
+    "fold1: train 2001-01..2009-12 | embargo 1m | valid 2010-02..2011-01",
+    "fold2: train 2001-01..2011-12 | embargo 1m | valid 2012-02..2013-01",
+    "fold3: train 2001-01..2013-12 | embargo 1m | valid 2014-02..2015-01",
+    "fold4: train 2001-01..2015-12 | embargo 1m | valid 2016-02..2017-01",
+    "fold5: train 2001-01..2017-12 | embargo 1m | valid 2018-02..2019-01",
+    "fold6: train 2001-01..2019-12 | embargo 1m | valid 2020-02..2021-01",
+    "fold7: train 2001-01..2021-12 | embargo 1m | valid 2022-02..2022-12"
+  ],
+  "min_train_months": 84,
+  "horizon_months": 12,
+  "step_months": 24,
+  "embargo_months": 1,
+  "holdout_months": 12,
+  "holdout_window": [
+    "2023-01",
+    "2023-12"
+  ],
+  "group_key": "address|post_code",
+  "iqr_flagged_rows_excluded": true,
+  "max_train_rows": 400000,
+  "rows": 1808352,
+  "models": [
+    "naive_postcode_month",
+    "naive_global_median",
+    "linear_ridge",
+    "random_forest",
+    "xgboost"
+  ],
+  "best_model": "random_forest",
+  "feature_spec": {
+    "numeric": [
+      "area_sqm",
+      "log_area",
+      "dist_cbd",
+      "log_dist_cbd",
+      "dist_train",
+      "dist_metro",
+      "dist_cbd_x_area",
+      "cash_rate_asof",
+      "cpi_yoy_asof",
+      "year_num",
+      "month_sin",
+      "month_cos",
+      "pc_med_price_3m",
+      "pc_med_unit_price_3m",
+      "pc_n_sales_3m",
+      "pc_n_months_observed_3m",
+      "pc_med_price_6m",
+      "pc_med_unit_price_6m",
+      "pc_n_sales_6m",
+      "pc_n_months_observed_6m",
+      "pc_med_price_12m",
+      "pc_med_unit_price_12m",
+      "pc_n_sales_12m",
+      "pc_price_iqr_ratio_12m",
+      "pc_n_months_observed_12m",
+      "pc_months_since_sale",
+      "pc_months_observed"
+    ],
+    "categorical_low_card": [
+      "development_type",
+      "zoning_clean"
+    ],
+    "categorical_high_card": [
+      "post_code",
+      "council_name",
+      "locality"
+    ],
+    "bin_source": "area_sqm",
+    "bin_quantiles": 10,
+    "target_smoothing": 20.0,
+    "standardize": true
+  },
+  "elapsed_seconds": 5430.7
+}

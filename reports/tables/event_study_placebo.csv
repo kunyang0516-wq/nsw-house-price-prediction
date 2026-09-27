@@ -1,0 +1,3 @@
+placebo,mean_post_coef,max_abs_post_coef,pretrend_p_value,pretrend_p_share_below_0_05,n_obs
+shifted_event_date,3.854941057726238e-18,0.03169301951914163,0.02865244350254459,,605
+random_treatment,-0.004415537632529103,0.020077777634548866,8.559892008208614e-06,1.0,2270

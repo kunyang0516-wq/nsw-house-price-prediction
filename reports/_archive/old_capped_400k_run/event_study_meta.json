@@ -1,0 +1,107 @@
+{
+  "spec": {
+    "event_id": "E1",
+    "radius_km": 2.0,
+    "control_min_km": 3.0,
+    "window_months": 24,
+    "reference_period": -1,
+    "cluster": "postcode",
+    "outcome": "log_median_unit_price",
+    "treated_variable": "dist_metro_p25",
+    "fallback_variable": "dist_metro",
+    "min_geocoded_points": 3,
+    "robustness_radii": [
+      1.0,
+      3.0
+    ],
+    "robustness_outcomes": [
+      "log_median_price",
+      "n_sales"
+    ],
+    "sa4_filter": [
+      "Sydney - Ryde",
+      "Sydney - Parramatta",
+      "Sydney - Baulkham Hills and Hawkesbury",
+      "Sydney - Blacktown"
+    ]
+  },
+  "event": {
+    "event_id": "E1",
+    "event_name": "Sydney Metro Northwest opening",
+    "event_type": "rail_opening",
+    "event_date": "2019-05-26 00:00:00",
+    "stations": "Tallawong|Rouse Hill|Kellyville|Bella Vista|Norwest|Hills Showground|Castle Hill|Cherrybrook|Epping|Macquarie University|Macquarie Park|North Ryde|Chatswood",
+    "opened_stations": "Tallawong|Rouse Hill|Kellyville|Bella Vista|Norwest|Hills Showground|Castle Hill|Cherrybrook|Epping|Macquarie University|Macquarie Park|North Ryde|Chatswood",
+    "source_url": "https://www.sydneymetro.info/about",
+    "notes": "First stage of Sydney Metro. All 13 stations opened on the same day (26 May 2019), so the event date is a single point in time for every treated postcode."
+  },
+  "event_month": "2019-05-01 00:00:00",
+  "treatment_summary": {
+    "treated_postcodes": 11,
+    "treated_list": [
+      "2113",
+      "2119",
+      "2121",
+      "2122",
+      "2125",
+      "2126",
+      "2153",
+      "2154",
+      "2155",
+      "2768",
+      "2769"
+    ],
+    "control_postcodes": 38,
+    "treated_mean_dist_km": 1.119737970971349,
+    "control_mean_dist_km": 12.252855275180021,
+    "distance_source_counts": {
+      "geocoded_p25": 606,
+      "centroid_fallback": 14
+    },
+    "postcodes_compared": 620,
+    "postcodes_disagreeing_with_centroid": 6
+  },
+  "main": {
+    "mean_post_coef": 0.037423076769938536,
+    "implied_pct_on_unit_price": 0.08999141351890438,
+    "pretrend": {
+      "n_pre_coefficients": 21,
+      "wald_statistic": 59.858606749846004,
+      "dof": 21,
+      "p_value": 1.3416463195303763e-05,
+      "max_abs_pre_coef": 0.04447511772798332,
+      "interpretation": "p < 0.05 rejects parallel pre-trends; report the design as descriptive rather than causal"
+    },
+    "n_obs": 2279,
+    "n_postcodes": 49
+  },
+  "dose_response": [
+    {
+      "specification": "dose_response",
+      "outcome": "log_median_unit_price",
+      "max_km": 5.0,
+      "coef_post_x_log_dist": -0.0029528032138386377,
+      "se": 0.008027714890241356,
+      "ci_low": -0.018687124398711695,
+      "ci_high": 0.012781517971034419,
+      "p_value": 0.7130028920123963,
+      "n_obs": 1068,
+      "n_postcodes": 22,
+      "interpretation": "negative interaction = the post-opening change is larger closer to the station"
+    },
+    {
+      "specification": "dose_response",
+      "outcome": "log_median_unit_price",
+      "max_km": 10.0,
+      "coef_post_x_log_dist": -0.016259178107180687,
+      "se": 0.004456068958833342,
+      "ci_low": -0.02499307326649404,
+      "ci_high": -0.007525282947867336,
+      "p_value": 0.0002634971787625062,
+      "n_obs": 1653,
+      "n_postcodes": 35,
+      "interpretation": "negative interaction = the post-opening change is larger closer to the station"
+    }
+  ],
+  "elapsed_seconds": 7.4
+}

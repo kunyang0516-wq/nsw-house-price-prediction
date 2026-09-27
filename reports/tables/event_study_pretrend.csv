@@ -1,0 +1,2 @@
+n_pre_coefficients,wald_statistic,dof,p_value,max_abs_pre_coef,interpretation
+21,66.92206048565819,21,1.0850337023304846e-06,0.042531789703260006,p < 0.05 rejects parallel pre-trends; report the design as descriptive rather than causal
