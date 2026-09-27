@@ -221,14 +221,24 @@ def check_consistency() -> bool:
         report("same fold count for every model", counts.nunique() == 1,
                f"{counts.to_dict()}")
 
-    # 5. The report must be at least as new as every table it embeds.
+    # 5. The report must be at least as new as the *data* tables it embeds.
+    #
+    # Excluded deliberately: `report_meta.json` and `report_cn_meta.json` are
+    # written BY the report, and `training_meta.json` / `event_study_meta.json`
+    # carry a wall-clock `elapsed_seconds` that changes on every re-run. All four
+    # are re-written (and therefore re-timestamped) on each invocation, including
+    # read-only ones, so comparing them against the report is a comparison
+    # against noise: reverting them with `git checkout` alone is enough to make
+    # the report look stale. What matters is that the report post-dates the
+    # tables whose *contents* it reproduces.
     report_path = REPORTS_DIR / "final_report.md"
     if report_path.exists():
-        # Exclude the report's own metadata: it is written *by* the report, so
-        # comparing against it is a self-comparison that can never pass.
-        own_outputs = {"report_meta.json", "report_cn_meta.json"}
+        volatile = {
+            "report_meta.json", "report_cn_meta.json",
+            "training_meta.json", "event_study_meta.json",
+        }
         embedded = [p for p in sorted(TABLES.glob("*.csv")) + sorted(TABLES.glob("*.json"))
-                    if p.name not in own_outputs]
+                    if p.name not in volatile]
         newest_table, mtime = newest(embedded)
         if newest_table is not None:
             report("final_report newer than tables", report_path.stat().st_mtime >= mtime,
