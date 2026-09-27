@@ -42,7 +42,6 @@ Each pipeline is independently runnable and idempotent; outputs land in `data/pr
 | `tests/` | 22 guards: data contract, leakage, macro as-of, CV splits |
 | `reports/` | `final_report.md`, `figures/`, `tables/` |
 | `initial_v0/` | the design documents this implementation follows |
-| `attic/` | **not used by the pipeline** — archived raw material, notebook output, team scripts, and the Chinese-language design documents and report (see `attic/README.md`; also gitignored) |
 
 ### What stays in the repository root, and why
 
