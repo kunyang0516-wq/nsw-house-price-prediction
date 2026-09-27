@@ -43,5 +43,5 @@
     "model_scores_by_fold.csv",
     "model_scores_grouped.csv"
   ],
-  "elapsed_seconds": 6.4
+  "elapsed_seconds": 7.5
 }

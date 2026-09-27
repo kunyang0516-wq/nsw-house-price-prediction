@@ -21,7 +21,6 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.models.registry import naive_postcode_month_predict
 from src.utils.config import PROJECT_ROOT, REPORTS_DIR
 from src.utils.io import read_json, write_json
 
@@ -476,19 +475,12 @@ def write_report(out_dir: Path, tables: Path, figures: Path) -> Path:
     holdout_tbl = pd.read_csv(holdout_path) if holdout_path.exists() else None
     by_fold = pd.read_csv(by_fold_path) if by_fold_path.exists() else None
 
-    # Needed by the 4.6 price-band table: the lagged rolling medians that the
-    # naive benchmark uses, so the benchmark can be recomputed on the same rows
-    # as the model predictions.
+    # Needed by the 4.6 price-band table. The benchmark's prediction is carried
+    # on `predictions.parquet` (written by 04), so no feature frame is read here
+    # -- an earlier version joined `features.parquet` on
+    # (contract_date, post_code), which is many-to-many and inflated the row
+    # count ~2.4x, silently disabling the table.
     predictions_path = tables / "predictions.parquet"
-    features = None
-    if FEATURES_PARQUET.exists():
-        try:
-            features = pd.read_parquet(
-                FEATURES_PARQUET,
-                columns=["contract_date", "post_code", "pc_med_price_12m",
-                         "pc_med_price_6m", "pc_med_price_3m"])
-        except (OSError, KeyError, ValueError) as exc:  # pragma: no cover - defensive
-            print(f"  (features unavailable for the price-band table: {exc})")
 
     def _rmsle(table: pd.DataFrame | None, model: str) -> float:
         if table is None or "rmsle" not in getattr(table, "columns", []):
@@ -962,64 +954,94 @@ def write_report(out_dir: Path, tables: Path, figures: Path) -> Path:
         ]
         if feature_demeaned is not None:
             sections += [md_table(demeaned_path, n=10), ""]
-    # --- 4.6 price-band table, derived ------------------------------------ #
-    # The quoted n's and APE figures used to be hardcoded from an earlier run.
+    # --- 4.6 price-band table, from the predictions table alone ------------ #
+    # `04_train_models.py` writes the benchmark's own prediction as
+    # `naive_pred_log10`, so nothing has to be joined here. An earlier version
+    # re-derived the benchmark by merging the lagged postcode medians from
+    # `features.parquet` on (contract_date, post_code) -- a many-to-many key,
+    # which fanned 577,992 prediction rows out to 1,409,682 and silently
+    # suppressed the whole table.
     band_rows: list[str] = []
     band_claim = ""
     worst1_text = ""
-    if features is not None and predictions_path.exists():
+    if predictions_path.exists():
         try:
             preds = pd.read_parquet(predictions_path)
             block = preds.loc[preds["model"] == best_model].copy()
-            if "area_sqm" in block.columns:
-                keys = features[["contract_date", "post_code", "pc_med_price_12m",
-                                 "pc_med_price_6m", "pc_med_price_3m"]]
-                joined = block.merge(keys, on=["contract_date", "post_code"], how="left")
-                if len(joined) == len(block):
-                    naive_pred = naive_postcode_month_predict(
-                        joined, float(np.nanmedian(joined["y_true_log10"])))
-                    joined["naive_pred_log10"] = naive_pred
-                    actual = np.power(10.0, joined["y_true_log10"].to_numpy())
-                    rf_ape = joined["abs_pct_error"].to_numpy()
-                    naive_ape = (np.abs(np.power(10.0, naive_pred) - actual)
-                                 / np.clip(actual, 1.0, None))
-                    joined["rf_ape"] = rf_ape
-                    joined["naive_ape"] = naive_ape
-                    joined["band"] = pd.qcut(
-                        joined["y_true_log10"].rank(method="first"), 5,
-                        labels=["Q1 cheapest", "Q2", "Q3", "Q4", "Q5 dearest"])
-                    band_rows = [f"| price band | n | {best_model} MdAPE | naive MdAPE | "
-                                 f"{best_model} mean APE | naive mean APE |",
-                                 "|---|---|---|---|---|---|"]
-                    rf_wins, naive_wins = 0, 0
-                    for label, grp in joined.groupby("band", observed=True):
-                        r_md = 100 * float(grp["rf_ape"].median())
-                        n_md = 100 * float(grp["naive_ape"].median())
-                        r_mn = 100 * float(grp["rf_ape"].mean())
-                        n_mn = 100 * float(grp["naive_ape"].mean())
-                        rf_better = r_mn < n_mn
-                        rf_wins += int(rf_better)
-                        naive_wins += int(not rf_better)
-                        band_rows.append(
-                            f"| {label} | {len(grp):,} | "
-                            f"{'**' if r_md < n_md else ''}{r_md:.1f}%{'**' if r_md < n_md else ''} | "
-                            f"{'**' if n_md < r_md else ''}{n_md:.1f}%{'**' if n_md < r_md else ''} | "
-                            f"{'**' if r_mn < n_mn else ''}{r_mn:.1f}%{'**' if r_mn < n_mn else ''} | "
-                            f"{'**' if n_mn < r_mn else ''}{n_mn:.1f}%{'**' if n_mn < r_mn else ''} |")
-                    band_claim = (
-                        f"`{best_model}` wins on mean APE in **{rf_wins} of 5** price bands and the "
-                        f"benchmark in **{naive_wins} of 5**.")
-                    # Concentration of squared log error in the worst 1%.
-                    err = (joined["y_pred_log10"] - joined["y_true_log10"]) ** 2
-                    nerr = (naive_pred - joined["y_true_log10"].to_numpy()) ** 2
-                    k = max(1, int(np.ceil(0.01 * len(err))))
-                    share_rf = float(np.sort(err.to_numpy())[-k:].sum() / err.sum() * 100)
-                    share_nv = float(np.sort(nerr)[-k:].sum() / nerr.sum() * 100)
-                    worst1_text = (
-                        f"**Concentration of error** (pooled folds): the worst 1% of rows carry "
-                        f"{share_rf:.1f}% of the total squared log error for {best_model} and "
-                        f"{share_nv:.1f}% for the benchmark — so both are tail-dominated, and neither "
-                        "number is an artefact of one bad row once the corruption fence is in place.")
+            required = {"naive_pred_log10", "y_true_log10", "y_pred_log10", "abs_pct_error"}
+            missing = sorted(required - set(block.columns))
+            if missing:
+                print(f"  (price-band table skipped: predictions.parquet lacks {missing}; "
+                      "re-run 04_train_models.py)")
+            elif block.empty:
+                print("  (price-band table skipped: no prediction rows for the best model)")
+            elif best_model == naive_name:
+                # The benchmark itself won the CV. Comparing it against itself
+                # would render two identical columns and a meaningless "wins in
+                # 0 of 5" claim, so report the breakdown on its own instead.
+                actual = np.power(10.0, block["y_true_log10"].to_numpy(dtype=float))
+                block["_ape"] = block["abs_pct_error"].to_numpy(dtype=float)
+                block["band"] = pd.qcut(
+                    block["y_true_log10"].rank(method="first"), 5,
+                    labels=["Q1 cheapest", "Q2", "Q3", "Q4", "Q5 dearest"])
+                band_rows = [f"| price band | n | {best_model} MdAPE | {best_model} mean APE |",
+                             "|---|---|---|---|"]
+                for label, grp in block.groupby("band", observed=True):
+                    band_rows.append(
+                        f"| {label} | {len(grp):,} | "
+                        f"{100 * float(grp['_ape'].median()):.1f}% | "
+                        f"{100 * float(grp['_ape'].mean()):.1f}% |")
+                band_claim = (
+                    f"`{best_model}` *is* the naive benchmark, so there is no model to compare it "
+                    "against here; the breakdown shows where that single number is accurate and "
+                    "where it is not.")
+            else:
+                actual = np.power(10.0, block["y_true_log10"].to_numpy(dtype=float))
+                naive_pred = block["naive_pred_log10"].to_numpy(dtype=float)
+                block["_ape"] = block["abs_pct_error"].to_numpy(dtype=float)
+                block["_naive_ape"] = (np.abs(np.power(10.0, naive_pred) - actual)
+                                       / np.clip(actual, 1.0, None))
+                block["band"] = pd.qcut(
+                    block["y_true_log10"].rank(method="first"), 5,
+                    labels=["Q1 cheapest", "Q2", "Q3", "Q4", "Q5 dearest"])
+                band_rows = [f"| price band | n | {best_model} MdAPE | naive MdAPE | "
+                             f"{best_model} mean APE | naive mean APE |",
+                             "|---|---|---|---|---|---|"]
+                model_wins, naive_wins = 0, 0
+                for label, grp in block.groupby("band", observed=True):
+                    m_md = 100 * float(grp["_ape"].median())
+                    n_md = 100 * float(grp["_naive_ape"].median())
+                    m_mn = 100 * float(grp["_ape"].mean())
+                    n_mn = 100 * float(grp["_naive_ape"].mean())
+                    model_better = m_mn < n_mn
+                    model_wins += int(model_better)
+                    naive_wins += int(not model_better)
+
+                    def _b(value: float, better: bool) -> str:
+                        return f"**{value:.1f}%**" if better else f"{value:.1f}%"
+
+                    band_rows.append(
+                        f"| {label} | {len(grp):,} | {_b(m_md, m_md < n_md)} | "
+                        f"{_b(n_md, n_md < m_md)} | {_b(m_mn, m_mn < n_mn)} | "
+                        f"{_b(n_mn, n_mn < m_mn)} |")
+                band_claim = (
+                    f"`{best_model}` wins on mean APE in **{model_wins} of "
+                    f"{model_wins + naive_wins}** price bands, the benchmark in the rest. "
+                    "MdAPE is a median over a mixture, so its overall value is dragged by whichever "
+                    "band the benchmark wins, even when it loses badly in the band that matters most "
+                    "for tail risk.")
+                # Concentration of squared log error in the worst 1%.
+                err = (block["y_pred_log10"].to_numpy(dtype=float)
+                       - block["y_true_log10"].to_numpy(dtype=float)) ** 2
+                nerr = (naive_pred - block["y_true_log10"].to_numpy(dtype=float)) ** 2
+                k = max(1, int(np.ceil(0.01 * len(err))))
+                share_model = float(np.sort(err)[-k:].sum() / err.sum() * 100)
+                share_naive = float(np.sort(nerr)[-k:].sum() / nerr.sum() * 100)
+                worst1_text = (
+                    f"**Concentration of error** (pooled folds): the worst 1% of rows carry "
+                    f"{share_model:.1f}% of the total squared log error for {best_model} and "
+                    f"{share_naive:.1f}% for the benchmark — so both are tail-dominated, and neither "
+                    "number is an artefact of one bad row once the corruption fence is in place.")
         except (OSError, KeyError, ValueError) as exc:  # pragma: no cover - defensive
             print(f"  (price-band table skipped: {type(exc).__name__}: {exc})")
 

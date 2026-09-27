@@ -144,6 +144,28 @@ def parse_args() -> argparse.Namespace:
 
 
 # --------------------------------------------------------------------------- #
+def add_naive_prediction(
+    predictions: pd.DataFrame,
+    frame: pd.DataFrame,
+    train_median_log: float,
+) -> pd.DataFrame:
+    """Attach the benchmark's prediction to a block of predictions.
+
+    The lagged postcode medians are already on the frame (they are ordinary
+    features), so the naive benchmark can be recomputed here at no cost. Writing
+    it into `predictions.parquet` is what lets `07_make_report.py` build its
+    price-band comparison without joining the feature frame: that join is
+    many-to-many on `(contract_date, post_code)` -- several sales share one
+    key -- and fanned 577,992 rows out to 1,409,682 before it was caught.
+
+    Rows whose 12m/6m/3m medians are all unavailable fall back to the training
+    median, exactly as `naive_postcode_month_predict` does on its own.
+    """
+    predictions = predictions.copy()
+    predictions["naive_pred_log10"] = naive_postcode_month_predict(frame, train_median_log)
+    return predictions
+
+
 def predict_one(
     model_spec: ModelSpec,
     Z_train: np.ndarray,
@@ -323,7 +345,7 @@ def main() -> int:
             store = pooled.setdefault(model_spec.name, {"y_true": [], "y_pred": []})
             store["y_true"].append(y_valid_values)
             store["y_pred"].append(y_pred)
-            predictions.append(pd.DataFrame({
+            predictions.append(add_naive_prediction(pd.DataFrame({
                 "model": model_spec.name,
                 "fold": fold.index,
                 "contract_date": valid["contract_date"].to_numpy(),
@@ -338,7 +360,7 @@ def main() -> int:
                 "y_true_log10": y_valid_values,
                 "y_pred_log10": y_pred,
                 "abs_pct_error": np.abs(10 ** y_pred - 10 ** y_valid_values) / (10 ** y_valid_values),
-            }))
+            }), valid, train_median_log))
 
             if is_last_fold:
                 importance.extend(importance_rows(model_spec, fitted, names))

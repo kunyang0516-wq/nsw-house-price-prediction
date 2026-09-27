@@ -327,9 +327,15 @@ cheap sale.
 **Where each model actually wins.** Splitting the same rows by actual-price quintile makes the
 trade-off visible:
 
-*(price-band table unavailable — predictions.parquet missing or stale)*
+| price band | n | xgboost MdAPE | naive MdAPE | xgboost mean APE | naive mean APE |
+|---|---|---|---|---|---|
+| Q1 cheapest | 115,599 | **24.4%** | 26.6% | **50.7%** | 55.9% |
+| Q2 | 115,598 | 13.2% | **12.7%** | 19.1% | **18.6%** |
+| Q3 | 115,598 | **13.7%** | 15.0% | **17.6%** | 18.7% |
+| Q4 | 115,598 | **13.0%** | 14.2% | **16.6%** | 18.4% |
+| Q5 dearest | 115,599 | **16.5%** | 18.7% | **19.5%** | 23.2% |
 
-*(per-band comparison unavailable; re-run `04_train_models.py` then `07_make_report.py`)*
+`xgboost` wins on mean APE in **4 of 5** price bands, the benchmark in the rest. MdAPE is a median over a mixture, so its overall value is dragged by whichever band the benchmark wins, even when it loses badly in the band that matters most for tail risk.
 
 **Which to report, and for what.**
 
@@ -340,7 +346,7 @@ trade-off visible:
 | fairness across the price range | **per-quintile APE** | a single number hides that the models win in different segments |
 | dollar impact | MAE/RMSE in AUD, **with the tail disclosed** | RMSE in dollars was once 100% attributable to a single row; always report the worst-1% share alongside |
 
-*(error-concentration statistic unavailable; re-run `04_train_models.py`)*
+**Concentration of error** (pooled folds): the worst 1% of rows carry 22.1% of the total squared log error for xgboost and 20.4% for the benchmark — so both are tail-dominated, and neither number is an artefact of one bad row once the corruption fence is in place.
 
 **Recommended wording for a presentation.** "The model predicts half of homes within 16% and has a lower scaled error than a postcode-median benchmark (0.318 vs 0.362). A simple benchmark is
 within ~2 percentage points on typical accuracy, so the value of the feature set is modest; the
