@@ -352,6 +352,37 @@ trade-off visible:
 within ~2 percentage points on typical accuracy, so the value of the feature set is modest; the
 model's real advantage is on the cheapest fifth of the market and in avoiding large misses."
 
+### 4.7 Are the models overfitting? A learning curve and a capacity probe
+
+Everything above argues that the models do not overfit **indirectly**: the cross-validation score sits close to the untouched holdout, and the fold-to-fold spread of a learned model is no worse than that of a naive benchmark. Neither observation ever looks at **training** error, so neither measures overfitting head-on. Two experiments close that gap.
+
+**Experiment 1 — learning curve.** On the largest fold (train through 2021-12, validate 2022), the same configuration is refitted on growing amounts of data. The training window always **ends** just before the validation period and only its **start** moves, so sample size changes while the gap to the validation period stays fixed. (Growing from the fold's original 2001 start instead would confound the two: 2% of that window is 2001 data predicting 2022, which scores ~1.3 RMSLE for reasons that have nothing to do with sample size.)
+
+| training rows | window | train RMSLE | early-stop tail | valid RMSLE | gap |
+|---|---|---|---|---|---|
+| 151,269 | 2020-04..2021-12 | 0.2984 | 0.3169 | 0.3428 | +0.0444 |
+| 378,173 | 2016-11..2021-12 | 0.2886 | 0.3229 | 0.3542 | +0.0655 |
+| 756,346 | 2011-11..2021-12 | 0.2891 | 0.3278 | 0.3570 | +0.0679 |
+| 1,134,519 | 2006-06..2021-12 | 0.2915 | 0.3346 | 0.3664 | +0.0749 |
+| 1,512,692 | 2001-01..2021-12 | 0.3005 | 0.3307 | 0.3558 | +0.0553 |
+
+Training error barely moves across a 10x change in training rows (0.2984 → 0.3005), and the gap to validation stays modest throughout (+0.0444 to +0.0749). A model that was memorising would show a large and widening gap; this one does not.
+
+**Adding training rows does not help — it slightly hurts. validation RMSLE changes by +0.0172 across a 10x increase in training rows, and its whole range is only 0.0236: the largest window scores 0.3558 against 0.3428 for the 10% window that only reaches back a few years. This is neither classic overfitting (training error is flat at ~0.300, and the gap is only +0.0553, about 16% of validation error) nor a shortage of data. It means the older transactions carry little usable signal for predicting the near future: house prices are close to a random walk, so 2001 sales are a weak guide to 2022 levels regardless of how many of them there are. The binding constraint is the relevance and informativeness of the features, not the volume of history.**
+
+**Experiment 2 — capacity probe.** The learning curve being flat could mean either (a) the learner has too little capacity to exploit more data, or (b) more data genuinely does not help. To separate them, the limiters are removed deliberately — early stopping off, `max_depth` 12, `min_child_weight` 1, 2000 rounds — and the model is fitted on a small window where it could easily memorise:
+
+| setting | training rows | train RMSLE | valid RMSLE | gap |
+|---|---|---|---|---|
+| production (600 rounds, early stopping) | 151,269 | 0.2984 | 0.3428 | +0.0444 |
+| unregularised probe | 30,253 | 0.1031 | 0.3611 | +0.2580 |
+
+Removing the limiters drives training error down to **0.1031** while validation stays at **0.3611** — a gap of **+0.2580**, roughly 6x the gap the production configuration actually shows. So the algorithm *can* overfit; the regularisation is what stops it, and it costs little accuracy.
+
+**Conclusion.** The binding constraint is not model capacity and not the volume of history — it is the information content of the features, plus the irreducible noise in what any single house sells for. That is also why the headline result is a modest 12% gain over a postcode-median benchmark: there is not much more signal in this feature set to extract, however the model is tuned.
+
+*(Reproduce with `python pipelines/09_learning_curve.py` and `--capacity-probe`; fold 7, 2022-02..2022-12.)*
+
 ## 5. Figures
 
 ![Distributions](figures/fig1_distributions.png)

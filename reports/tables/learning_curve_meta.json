@@ -1,0 +1,36 @@
+{
+  "fold": 7,
+  "fold_label": "fold7: train 2001-01..2021-12 | embargo 1m | valid 2022-02..2022-12",
+  "valid_window": [
+    "2022-02",
+    "2022-12"
+  ],
+  "model": "xgboost",
+  "model_kind": "xgboost",
+  "params": {
+    "n_estimators": 600,
+    "learning_rate": 0.05,
+    "max_depth": 8,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "min_child_weight": 5,
+    "reg_lambda": 1.0,
+    "tree_method": "hist",
+    "random_state": 36103,
+    "early_stopping_rounds": 50
+  },
+  "n_jobs": 1,
+  "device": "cuda",
+  "sizes": [
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "seed": 36103,
+  "train_rows_full": 1512692,
+  "valid_rows": 5,
+  "verdict": "Adding training rows does not help — it slightly hurts. validation RMSLE changes by +0.0172 across a 10x increase in training rows, and its whole range is only 0.0236: the largest window scores 0.3558 against 0.3428 for the 10% window that only reaches back a few years. This is neither classic overfitting (training error is flat at ~0.300, and the gap is only +0.0553, about 16% of validation error) nor a shortage of data. It means the older transactions carry little usable signal for predicting the near future: house prices are close to a random walk, so 2001 sales are a weak guide to 2022 levels regardless of how many of them there are. The binding constraint is the relevance and informativeness of the features, not the volume of history.",
+  "elapsed_seconds": 84.7
+}

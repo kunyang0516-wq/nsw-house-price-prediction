@@ -11,8 +11,27 @@ Numbered so the order is unambiguous. Run them in sequence:
 06_event_study.py       Metro E1 event study (TWFE + placebos + dose response)
 07_make_report.py       every figure + reports/final_report.md
 08_feature_value_test.py  layered ablation + permutation/time-reversal placebos
+09_learning_curve.py    learning curve + unregularised capacity probe (overfitting check)
 run_chain.py            runs 01 -> 07 in one process, in order
 ```
+
+`09_learning_curve.py` is a diagnostic, not a pipeline stage, and is not part of
+`run_chain.py`. It measures overfitting directly, which nothing else does — every other
+check reasons from cross-validation-vs-holdout agreement without ever looking at training
+error. It writes `reports/tables/learning_curve.csv` and, with `--capacity-probe`,
+`learning_curve_probe.csv`; §4.7 of the report is generated from those two tables.
+
+```powershell
+.\.venv\Scripts\python.exe pipelines\09_learning_curve.py --fold 7 --xgb-device cuda
+.\.venv\Scripts\python.exe pipelines\09_learning_curve.py --fold 7 --capacity-probe --xgb-device cuda
+```
+
+`--mode fixed-span` (the default) slides the training window's **start** so it always ends
+just before validation: only the sample size changes. `--mode varying-span` grows from the
+fold's original start instead, which also lengthens the gap to the validation period and
+therefore confounds sample size with market drift — 2% of the largest fold is 2001 data
+predicting 2022, which scores ~1.3 RMSLE for that reason alone. The fixed-span default
+exists because that confound is easy to miss and produces a meaningless curve.
 
 `run_chain.py` exists because `--rf-jobs` needs threads and joblib's pool cannot
 be built in a confined shell (see below). Running every stage in a *single*

@@ -1,0 +1,30 @@
+{
+  "mode": "capacity_probe",
+  "fold": 7,
+  "fold_label": "fold7: train 2001-01..2021-12 | embargo 1m | valid 2022-02..2022-12",
+  "valid_window": [
+    "2022-02",
+    "2022-12"
+  ],
+  "model": "xgboost",
+  "params": {
+    "n_estimators": 2000,
+    "learning_rate": 0.05,
+    "max_depth": 12,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "min_child_weight": 1,
+    "reg_lambda": 1.0,
+    "tree_method": "hist",
+    "random_state": 36103
+  },
+  "train_rows": 30253,
+  "train_start": "2021-09",
+  "train_end": "2021-12",
+  "train_rmsle": 0.1031,
+  "valid_rmsle": 0.3611,
+  "gap": 0.258,
+  "seed": 36103,
+  "verdict": "Single-point capacity probe (n = 30,253, unregularised): training RMSLE 0.1031 against validation RMSLE 0.3611, a gap of +0.2580. The learner can drive training error far below validation error, so the algorithm has ample capacity to memorise. Any flat or worsening learning curve under the production configuration is therefore NOT a capacity problem -- it is the regularisation working, plus features that do not carry more signal.",
+  "elapsed_seconds": 52.1
+}

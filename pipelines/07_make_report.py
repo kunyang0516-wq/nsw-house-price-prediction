@@ -1049,6 +1049,104 @@ def write_report(out_dir: Path, tables: Path, figures: Path) -> Path:
         except (OSError, KeyError, ValueError) as exc:  # pragma: no cover - defensive
             print(f"  (price-band table skipped: {type(exc).__name__}: {exc})")
 
+    # --- 4.7 learning curve + capacity probe ------------------------------- #
+    # Answers "are we overfitting?" head-on. Everything elsewhere in this section argues
+    # it only indirectly (CV close to holdout, fold spread no worse than a naive model),
+    # and none of that ever looks at TRAINING error.
+    learning_curve_section: list[str] = []
+    lc_path = tables / "learning_curve.csv"
+    probe_path = tables / "learning_curve_probe.csv"
+    if lc_path.exists() and probe_path.exists():
+        lc = pd.read_csv(lc_path)
+        probe = pd.read_csv(probe_path)
+        lc_meta = read_json(tables / "learning_curve_meta.json")
+        probe_meta = read_json(tables / "learning_curve_probe_meta.json")
+
+        def _m(value) -> str:
+            return "<1" if value < 1 else f"{value:.0f}"
+
+        rows_txt = ["| training rows | window | train RMSLE | early-stop tail | valid RMSLE "
+                    "| gap |", "|---|---|---|---|---|---|"]
+        for _, r in lc.iterrows():
+            rows_txt.append(
+                f"| {int(r.train_rows):,} | {r.train_start}..{r.train_end} "
+                f"| {r.train_rmsle:.4f} | "
+                f"{'—' if r.train_tail_rmsle != r.train_tail_rmsle else f'{r.train_tail_rmsle:.4f}'} "
+                f"| {r.valid_rmsle:.4f} | {r.gap_valid_minus_train:+.4f} |")
+
+        lc_first, lc_last = lc.iloc[0], lc.iloc[-1]
+        learning_curve_section = [
+            "### 4.7 Are the models overfitting? A learning curve and a capacity probe",
+            "",
+            "Everything above argues that the models do not overfit **indirectly**: the "
+            "cross-validation score sits close to the untouched holdout, and the fold-to-fold "
+            "spread of a learned model is no worse than that of a naive benchmark. Neither "
+            "observation ever looks at **training** error, so neither measures overfitting "
+            "head-on. Two experiments close that gap.",
+            "",
+            "**Experiment 1 — learning curve.** On the largest fold (train through 2021-12, "
+            "validate 2022), the same configuration is refitted on growing amounts of data. "
+            "The training window always **ends** just before the validation period and only its "
+            "**start** moves, so sample size changes while the gap to the validation period "
+            "stays fixed. (Growing from the fold's original 2001 start instead would confound "
+            "the two: 2% of that window is 2001 data predicting 2022, which scores ~1.3 RMSLE "
+            "for reasons that have nothing to do with sample size.)",
+            "",
+            *rows_txt,
+            "",
+            f"Training error barely moves across a "
+            f"{lc_last.train_rows / lc_first.train_rows:.0f}x change in training rows "
+            f"({lc_first.train_rmsle:.4f} → {lc_last.train_rmsle:.4f}), and the gap to "
+            f"validation stays modest throughout ("
+            f"{lc.gap_valid_minus_train.min():+.4f} to {lc.gap_valid_minus_train.max():+.4f}). "
+            "A model that was memorising would show a large and widening gap; this one does not.",
+            "",
+            f"**{lc_meta.get('verdict', '')}**",
+            "",
+            "**Experiment 2 — capacity probe.** The learning curve being flat could mean either "
+            "(a) the learner has too little capacity to exploit more data, or (b) more data "
+            "genuinely does not help. To separate them, the limiters are removed deliberately — "
+            "early stopping off, `max_depth` 12, `min_child_weight` 1, "
+            f"{probe_meta.get('params', {}).get('n_estimators', 'many')} rounds — and the model "
+            "is fitted on a small window where it could easily memorise:",
+            "",
+            "| setting | training rows | train RMSLE | valid RMSLE | gap |",
+            "|---|---|---|---|---|",
+            f"| production (600 rounds, early stopping) | {int(lc_first.train_rows):,} "
+            f"| {lc_first.train_rmsle:.4f} | {lc_first.valid_rmsle:.4f} "
+            f"| {lc_first.gap_valid_minus_train:+.4f} |",
+            f"| unregularised probe | {int(probe.iloc[0].train_rows):,} "
+            f"| {probe.iloc[0].train_rmsle:.4f} | {probe.iloc[0].valid_rmsle:.4f} "
+            f"| {probe.iloc[0].gap_valid_minus_train:+.4f} |",
+            "",
+            f"Removing the limiters drives training error down to "
+            f"**{probe.iloc[0].train_rmsle:.4f}** while validation stays at "
+            f"**{probe.iloc[0].valid_rmsle:.4f}** — a gap of "
+            f"**{probe.iloc[0].gap_valid_minus_train:+.4f}**, roughly "
+            f"{probe.iloc[0].gap_valid_minus_train / lc_first.gap_valid_minus_train:.0f}x the "
+            "gap the production configuration actually shows. So the algorithm *can* overfit; "
+            "the regularisation is what stops it, and it costs little accuracy.",
+            "",
+            "**Conclusion.** The binding constraint is not model capacity and not the volume of "
+            "history — it is the information content of the features, plus the irreducible "
+            "noise in what any single house sells for. That is also why the headline result is "
+            "a modest 12% gain over a postcode-median benchmark: there is not much more signal "
+            "in this feature set to extract, however the model is tuned.",
+            "",
+            f"*(Reproduce with `python pipelines/09_learning_curve.py` and "
+            f"`--capacity-probe`; fold {lc_meta.get('fold', '?')}, "
+            f"{lc_meta.get('valid_window', ['?', '?'])[0]}..{lc_meta.get('valid_window', ['?', '?'])[1]}.)*",
+            "",
+        ]
+    elif lc_path.exists() or probe_path.exists():
+        learning_curve_section = [
+            "### 4.7 Are the models overfitting? A learning curve and a capacity probe",
+            "",
+            "*(Only one of the two experiments has been run. Re-run "
+            "`python pipelines/09_learning_curve.py` and then again with `--capacity-probe`.)*",
+            "",
+        ]
+
     sections += [
         "### 4.6 Which metric should be used, and why MdAPE and RMSLE can disagree",
         "",
@@ -1092,6 +1190,7 @@ def write_report(out_dir: Path, tables: Path, figures: Path) -> Path:
         "within ~2 percentage points on typical accuracy, so the value of the feature set is modest; the",
         "model's real advantage is on the cheapest fifth of the market and in avoiding large misses.\"",
         "",
+        *learning_curve_section,
         "## 5. Figures",        "",
         "![Distributions](figures/fig1_distributions.png)",
         "",

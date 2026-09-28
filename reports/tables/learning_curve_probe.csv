@@ -1,0 +1,2 @@
+train_rows,fraction_of_fold_train,train_start,train_end,train_rmsle,train_tail_rmsle,valid_rmsle,gap_valid_minus_train,ratio_valid_over_train,seconds
+30253,0.02,2021-09,2021-12,0.1031,,0.3611,0.258,3.502,48.7

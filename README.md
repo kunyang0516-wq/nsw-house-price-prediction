@@ -87,7 +87,7 @@ To run the whole chain in one process (about 60 minutes), see `pipelines/run_cha
 | `src/validation/` | `time_series_cv.py` (expanding/sliding folds, embargo, group purge) |
 | `src/causal/` | `event_study.py` (TWFE event study, dose-response, placebos) |
 | `src/evaluation/` | `metrics.py`, `hypothesis_tests.py` |
-| `pipelines/` | `00_check_staleness` then `01_build_clean` → `07_make_report`; `run_chain.py` runs them in order |
+| `pipelines/` | `00_check_staleness`, `01_build_clean` → `07_make_report`, `08_feature_value_test`, and the `09_learning_curve` diagnostic; `run_chain.py` runs the numbered stages in order |
 | `tests/` | 55 guards: data contract, leakage, macro as-of, CV splits, de-duplication and grouping, thread-forest equivalence |
 | `reports/` | `final_report.md`, `figures/`, `tables/` |
 | `initial_v0/` | the design documents this implementation follows |
