@@ -462,7 +462,11 @@ def write_report(out_dir: Path, tables: Path, figures: Path) -> Path:
                if isinstance(pretrend_p, (int, float)) and pretrend_p == pretrend_p and pretrend_p >= 0.05
                else "pre-trend test REJECTS parallel trends (p = {:s}), so the Metro coefficients "
                     "are reported as **descriptive**, not causal".format(
-                        "n/a" if pretrend_p != pretrend_p else f"{pretrend_p:.4f}"))
+                        # Scientific notation for tiny p-values: the headline test comes out at
+                        # ~1e-06, and "{:.4f}" renders that as "0.0000", which reads like a broken
+                        # number rather than a decisive rejection.
+                        "n/a" if pretrend_p != pretrend_p
+                        else (f"{pretrend_p:.2e}" if abs(pretrend_p) < 1e-3 else f"{pretrend_p:.4f}")))
 
     # --- model narrative, derived from the tables ------------------------- #
     # These numbers used to be hardcoded, which meant a rebuild left the prose
