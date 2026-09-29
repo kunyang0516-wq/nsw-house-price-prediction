@@ -11,7 +11,36 @@ Layers (each adds to the previous):
     L2  + zone / region labels   development_type, zoning, postcode, council, locality
     L3  + lagged price stats     pc_med_price_{3,6,12}m          <- headline increment
     L4  + lagged unit price      pc_med_unit_price_{3,6,12}m
-    L5  + dispersion & liquidity pc_price_iqr_ratio_12m, pc_n_sales_*, coverage, staleness
+    M1  + macro                  cash_rate_asof, cpi_yoy_asof
+    D1  + dispersion             pc_price_iqr_ratio_12m
+    Q1  + liquidity & coverage   pc_n_sales_*, pc_n_months_observed_*, staleness
+
+Three changes of substance, each closing a gap rather than adding a feature:
+
+1. **The macro block had never been ablated.** `cash_rate_asof` and `cpi_yoy_asof` are
+   in the production feature spec, but no ablation layer included them, so the report
+   could not say whether they earn their place. They are added as `M1`, placed **last**,
+   so the increment is measured against a model that already carries every other feature
+   — the strictest available test, and the one that matches the question being asked
+   ("once you know where, when, how big and what the neighbourhood has been selling for,
+   does the cash rate tell you anything more?").
+
+   Both macro columns are functions of the contract date (43 and 93 distinct values across
+   276 months), so they are near-collinear with the calendar layer. That is precisely why
+   they are measured *after* it rather than before: credited first, they would simply be
+   collecting the time trend's contribution. An earlier revision placed them directly
+   after L4, which was wrong twice over — it made L4's own delta a comparison against a
+   worse model, and it contaminated D1's delta, because consecutive-difference attribution
+   charges each layer for whatever the layer immediately before it did.
+
+2. **The old `L5` mixed two different ideas under one label.** `pc_price_iqr_ratio_12m`
+   is *dispersion* (how heterogeneous a postcode's stock is); the `pc_n_sales_*` and
+   `pc_n_months_observed_*` columns are *liquidity and coverage* (how active the market
+   is and how trustworthy the rolling median is). Calling the block "liquidity" was
+   misleading and made the negative increment impossible to attribute. They are now
+   separate layers, `D1` and `Q1`.
+
+3. The layer key `L5` no longer exists, so downstream code keys off the new names.
 
 Falsification tests:
 
@@ -48,9 +77,18 @@ TABLES_DIR = REPORTS_DIR / "tables"
 
 PRICE_STATS = ["pc_med_price_3m", "pc_med_price_6m", "pc_med_price_12m"]
 UNIT_PRICE_STATS = ["pc_med_unit_price_3m", "pc_med_unit_price_6m", "pc_med_unit_price_12m"]
-LIQUIDITY_STATS = ["pc_price_iqr_ratio_12m", "pc_n_sales_3m", "pc_n_sales_6m", "pc_n_sales_12m",
-                   "pc_n_months_observed_3m", "pc_n_months_observed_6m", "pc_n_months_observed_12m",
+# How heterogeneous a postcode's stock is: the 12-month interquartile price ratio.
+DISPERSION_STATS = ["pc_price_iqr_ratio_12m"]
+# How active the market is, and how much evidence sits behind the rolling statistics.
+# `pc_n_months_observed_*` is strictly a coverage column -- it tells the model how much to
+# trust `pc_med_price_*` -- so it belongs with liquidity rather than with price levels.
+LIQUIDITY_STATS = ["pc_n_sales_3m", "pc_n_sales_6m", "pc_n_sales_12m",
+                   "pc_n_months_observed_3m", "pc_n_months_observed_6m",
+                   "pc_n_months_observed_12m",
                    "pc_months_since_sale", "pc_months_observed"]
+# Pure functions of the contract date; see the module docstring on why their layer sits
+# after the calendar layer rather than before it.
+MACRO_STATS = ["cash_rate_asof", "cpi_yoy_asof"]
 PROPERTY_LOCATION = ["area_sqm", "log_area", "dist_cbd", "log_dist_cbd", "dist_train", "dist_metro"]
 CALENDAR = ["year_num", "month_sin", "month_cos"]
 LABELS = ["development_type", "zoning_clean", "post_code", "council_name", "locality"]
@@ -72,25 +110,64 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+HIGH_CARD_CATEGORIES = ("post_code", "council_name", "locality")
+
+
 def spec_for(numerics: list[str], categories: list[str], bin_source: str = "area_sqm") -> FeatureSpec:
-    return FeatureSpec(numeric=tuple(numerics),
-                       categorical_low_card=tuple(c for c in categories if c != "post_code"
-                                                  and c != "council_name" and c != "locality"),
-                       categorical_high_card=tuple(c for c in categories if c in
-                                                   ("post_code", "council_name", "locality")),
-                       bin_source=bin_source)
+    """Build a FeatureSpec, keeping the numeric and categorical roles disjoint.
+
+    The callers pass one flat list of "everything in this layer", so the categorical
+    names appear in `numerics` too. Passing that straight through put five string columns
+    into `FeatureSpec.numeric`, which meant each of them was *also* processed by the
+    numeric block: coerced to NaN, imputed with a constant, standardised, and emitted as a
+    useless `num__<name>` column alongside its real `low__`/`high__` encoding. It also made
+    `PropertyFeatureTransformer.fit` crash on the oldest folds, where such a column can be
+    entirely missing (`float(pd.NA)` raises), which is why the ablation could not be run on
+    a single early fold at all.
+    """
+    category_names = tuple(categories)
+    numeric_only = [c for c in numerics if c not in category_names]
+    return FeatureSpec(
+        numeric=tuple(numeric_only),
+        categorical_low_card=tuple(c for c in category_names
+                                   if c not in HIGH_CARD_CATEGORIES),
+        categorical_high_card=tuple(c for c in category_names
+                                    if c in HIGH_CARD_CATEGORIES),
+        bin_source=bin_source,
+    )
 
 
 def layer_specs() -> dict[str, FeatureSpec]:
-    """Cumulative feature layers."""
+    """Cumulative feature layers, in the order they are added.
+
+    Insertion order is load-bearing twice over: `summary["rmsle_mean"].diff()` and the
+    per-fold improvement count are both taken along this order, so each layer's increment
+    is measured against the one before it here. (The per-fold count additionally has to
+    reindex the pivot, because `pivot_table` sorts its columns alphabetically.)
+    """
+    base = list(PROPERTY_LOCATION)
+    cal = base + CALENDAR
+    lab = cal + LABELS
+    price = lab + PRICE_STATS
+    unit = price + UNIT_PRICE_STATS
+    with_dispersion = unit + DISPERSION_STATS
+    full = with_dispersion + LIQUIDITY_STATS
+
     return {
-        "L0_property_location": spec_for(PROPERTY_LOCATION, []),
-        "L1_plus_calendar": spec_for(PROPERTY_LOCATION + CALENDAR, []),
-        "L2_plus_labels": spec_for(PROPERTY_LOCATION + CALENDAR, LABELS),
-        "L3_plus_lagged_price": spec_for(PROPERTY_LOCATION + CALENDAR + PRICE_STATS, LABELS),
-        "L4_plus_unit_price": spec_for(PROPERTY_LOCATION + CALENDAR + PRICE_STATS + UNIT_PRICE_STATS, LABELS),
-        "L5_plus_liquidity": spec_for(PROPERTY_LOCATION + CALENDAR + PRICE_STATS + UNIT_PRICE_STATS
-                                      + LIQUIDITY_STATS, LABELS),
+        "L0_property_location": spec_for(base, []),
+        "L1_plus_calendar": spec_for(cal, []),
+        "L2_plus_labels": spec_for(cal, LABELS),
+        "L3_plus_lagged_price": spec_for(price, LABELS),
+        "L4_plus_unit_price": spec_for(unit, LABELS),
+        "D1_plus_dispersion": spec_for(with_dispersion, LABELS),
+        "Q1_plus_liquidity_coverage": spec_for(full, LABELS),
+        # Macro goes LAST so its increment is measured against a model that already has
+        # everything else. Placing it in the middle (after L4) was wrong for two reasons:
+        # it made `L4`'s own delta a comparison against a worse model, and it contaminated
+        # `D1`'s delta, since consecutive-difference attribution charges each layer for
+        # whatever the layer immediately before it did. Last is also the stricter test:
+        # it asks whether macro adds anything the other 26 features did not already carry.
+        "M1_plus_macro": spec_for(full + MACRO_STATS, LABELS),
     }
 
 
@@ -183,6 +260,7 @@ def main() -> int:
                   "random_state": 36103}
 
     specs = layer_specs()
+    print(f"Layers: {len(specs)} (L0-L4, M1 macro, D1 dispersion, Q1 liquidity/coverage)")
     rows: list[dict] = []
 
     for fold in folds:
@@ -213,10 +291,21 @@ def main() -> int:
                .agg(rmsle_mean=("rmsle", "mean"), rmsle_std=("rmsle", "std"),
                     mdape_mean=("mdape_pct", "mean"), folds=("fold", "nunique"))
                .reset_index())
+    # Reorder to insertion order FIRST. `groupby` sorts its keys alphabetically, so
+    # `summary` arrives as D1, L0, L1, L2, L3, L4, M1, Q1 -- and every downstream diff
+    # taken along it would compare the wrong pairs. (The layer table itself is already in
+    # insertion order, since the loop emits folds outermost and layers innermost.)
+    layer_order = list(layer_specs())
+    summary = summary.set_index("layer").reindex(layer_order).reset_index()
+
     summary["rmsle_delta_vs_prev"] = summary["rmsle_mean"].diff()
+    # Same ordering requirement for the per-fold counts: `pivot_table` also sorts its
+    # columns alphabetically, so it needs the explicit reindex too.
+    fold_pivot = (layer_table.pivot_table(index="fold", columns="layer", values="rmsle")
+                  .reindex(columns=layer_order))
+    fold_deltas = fold_pivot.diff(axis=1)
     summary["folds_improved_vs_prev"] = [
-        int((layer_table.pivot_table(index="fold", columns="layer", values="rmsle")
-             .diff(axis=1)[layer] < 0).sum()) if i else np.nan
+        int((fold_deltas[layer] < 0).sum()) if i else np.nan
         for i, layer in enumerate(summary["layer"])
     ]
     print("\n=== Layer ablation (mean across folds; negative delta = improvement) ===")
@@ -323,6 +412,7 @@ def main() -> int:
 
     if not args.no_save:
         TABLES_DIR.mkdir(parents=True, exist_ok=True)
+        # Already in insertion order; the reindex is a guard, not a fix.
         layer_table.to_csv(TABLES_DIR / "feature_ablation_by_fold.csv", index=False)
         summary.to_csv(TABLES_DIR / "feature_ablation.csv", index=False)
         if not placebo_table.empty:

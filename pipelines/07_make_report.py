@@ -403,7 +403,9 @@ def write_report(out_dir: Path, tables: Path, figures: Path) -> Path:
             "L2_plus_labels": "the property/region label block",
             "L3_plus_lagged_price": "the engineered lagged neighbourhood price statistics",
             "L4_plus_unit_price": "the lagged unit-price columns",
-            "L5_plus_liquidity": "the liquidity/dispersion/coverage block",
+            "M1_plus_macro": "the macro block (RBA cash rate and CPI)",
+            "D1_plus_dispersion": "the price-dispersion column",
+            "Q1_plus_liquidity_coverage": "the liquidity and coverage block",
         }
         best_row = ranked.iloc[0]
         second_row = ranked.iloc[1] if n_layers > 1 else None
@@ -426,35 +428,64 @@ def write_report(out_dir: Path, tables: Path, figures: Path) -> Path:
         second_txt = ""
         if second_row is not None:
             second_txt = f" The next largest is {_describe(second_row)}."
-        worst_txt = ""
-        if worst_row["rmsle_delta_vs_prev"] > 0:
-            worst_txt = (f" Only {_with_article(worst_row)} makes things "
-                         f"worse ({worst_row['rmsle_delta_vs_prev']:+.4f}, "
-                         f"{_folds(worst_row['layer'])} folds).")
-        elif worst_row["rmsle_delta_vs_prev"] == 0:
-            worst_txt = (f" The smallest contribution is {_with_article(worst_row)} "
-                         f"({worst_row['rmsle_delta_vs_prev']:+.4f}).")
+
+        # Every layer that made things worse, together rather than just the worst one: on
+        # this data three of the seven blocks are net-negative, and naming only the worst
+        # understates the finding.
+        harmful = layer_rows[layer_rows["rmsle_delta_vs_prev"] > 0].sort_values(
+            "rmsle_delta_vs_prev", ascending=False)
+        harmful_txt = ""
+        if len(harmful) == 1:
+            row = harmful.iloc[0]
+            harmful_txt = (f" One block makes things worse: {_with_article(row)} "
+                           f"({row['rmsle_delta_vs_prev']:+.4f}, {_folds(row['layer'])} folds).")
+        elif len(harmful) > 1:
+            names = ", ".join(_with_article(r) for _, r in harmful.iterrows())
+            deltas = ", ".join(f"{r['rmsle_delta_vs_prev']:+.4f}" for _, r in harmful.iterrows())
+            # The best layer that is NOT one of the harmful ones -- the model you would
+            # actually ship. Taken as a minimum rather than by counting backwards through
+            # the table, which silently breaks if the harmful layers are not contiguous.
+            healthy = layer_rows[~layer_rows["layer"].isin(harmful["layer"])]
+            lean = healthy.loc[healthy["rmsle_mean"].idxmin()] if len(healthy) else None
+            lean_txt = ""
+            if lean is not None:
+                lean_txt = (
+                    f" The leanest model that beats all of them is **{lean['layer']}** at "
+                    f"**{lean['rmsle_mean']:.4f}** mean RMSLE "
+                    f"({int(lean['folds'])} folds), against "
+                    f"{float(layer_rows.iloc[-1]['rmsle_mean']):.4f} for the full set.")
+            harmful_txt = (
+                f" **{len(harmful)} of the {n_layers} blocks make things worse:** {names} "
+                f"({deltas} RMSLE respectively).{lean_txt}")
 
         headline_ablation = (
             f"**The single largest contributor is {_with_article(best_row)}** "
             f"({best_row['rmsle_delta_vs_prev']:+.4f} RMSLE, {_folds(best_row['layer'])} folds) — "
             f"measured as the drop in pooled RMSLE from adding that layer on top of the previous one."
             f"{second_txt} Layers are cumulative, so each delta is that block's marginal value once "
-            f"everything before it is present.{worst_txt}"
+            f"everything before it is present.{harmful_txt}"
         )
         # One-line summary for the headline-findings list, so it cannot drift
         # from §4.5 (which used to happen: the two were written independently and
         # the headline kept asserting the previous run's conclusion).
         improves = int((layer_rows["rmsle_delta_vs_prev"] < 0).sum())
+        how_many_harm = len(harmful)
+        if how_many_harm > 1:
+            tail = (f" **{how_many_harm} of the {n_layers} blocks make it worse** "
+                    f"({', '.join(_with_article(r) for _, r in harmful.iterrows())}), so the "
+                    f"leanest model beats the full feature set: {lean['layer'] if lean is not None else 'n/a'} "
+                    f"at {lean['rmsle_mean']:.4f} against "
+                    f"{float(layer_rows.iloc[-1]['rmsle_mean']):.4f} mean RMSLE.")
+        elif how_many_harm == 1:
+            row = harmful.iloc[0]
+            tail = (f" Only {_with_article(row)} does not help "
+                    f"({row['rmsle_delta_vs_prev']:+.4f}).")
+        else:
+            tail = " Every block contributes."
         ablation_verdict = (
             f"{improves} of {n_layers} blocks reduce pooled RMSLE. "
             f"The largest gain is {_with_article(best_row)} "
-            f"({best_row['rmsle_delta_vs_prev']:+.4f})"
-            + (f"; the smallest is {_with_article(worst_row)} "
-               f"({worst_row['rmsle_delta_vs_prev']:+.4f})."
-               if worst_row["rmsle_delta_vs_prev"] <= 0 else
-               f", and {_with_article(worst_row)} does not help "
-               f"({worst_row['rmsle_delta_vs_prev']:+.4f}).")
+            f"({best_row['rmsle_delta_vs_prev']:+.4f})." + tail
         )
 
     verdict = ("pre-trend test PASSES (p = {:.3f}), so a causal reading is defensible "
@@ -932,9 +963,32 @@ def write_report(out_dir: Path, tables: Path, figures: Path) -> Path:
             "| L2 | + region labels (postcode / council / locality / zoning / development) |",
             "| L3 | + **lagged price statistics** `pc_med_price_{3,6,12}m` |",
             "| L4 | + lagged unit price `pc_med_unit_price_{3,6,12}m` |",
-            "| L5 | + dispersion, sales counts, coverage, staleness |",
+            "| D1 | + price **dispersion** `pc_price_iqr_ratio_12m` |",
+            "| Q1 | + **liquidity & coverage** (`pc_n_sales_*`, `pc_n_months_observed_*`, staleness) |",
+            "| M1 | + **macro block** (`cash_rate_asof`, `cpi_yoy_asof`) |",
             "",
-            md_table(ablation_path, n=10),
+            "Three notes on how to read this.",
+            "",
+            "**The macro layer sits last on purpose.** Both macro columns are pure functions "
+            "of the contract date (43 and 93 distinct values across 276 months), so they are "
+            "near-collinear with `year_num` from L1. Measured last, the increment answers the "
+            "strict question — once you know where the property is, when it sold, how big it "
+            "is and what the neighbourhood has been selling for, does the cash rate tell you "
+            "anything more? Credited earlier, the macro block would simply be collecting the "
+            "time trend's contribution.",
+            "",
+            "**Dispersion and liquidity are separate layers, not one block.** An earlier "
+            "version grouped `pc_price_iqr_ratio_12m` with the sales-count and coverage "
+            "columns under the single label \"liquidity\". They are different ideas — the "
+            "ratio says how *heterogeneous* a postcode's stock is, while the counts say how "
+            "*active* it is and how much evidence sits behind the rolling medians — and "
+            "lumping them together made the negative increment impossible to attribute.",
+            "",
+            "**Contributions are consecutive differences**, so each layer is charged for "
+            "whatever the layer immediately before it did. That is why layer order matters "
+            "and why the ordering above is deliberate rather than arbitrary.",
+            "",
+            md_table(ablation_path, n=12),
             "",
             headline_ablation,
             "",

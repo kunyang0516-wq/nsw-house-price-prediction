@@ -90,6 +90,9 @@ class PropertyFeatureTransformer(BaseEstimator, TransformerMixin):
         self.spec = spec or FeatureSpec()
         self.feature_names_: list[str] = []
         self.impute_values_: dict[str, float] = {}
+        # Columns that had no usable value anywhere in the training fold and were therefore
+        # filled with a constant. Recorded so a degenerate fold is visible, not silent.
+        self.degenerate_imputations_: dict[str, int] = {}
         self.frequency_maps_: dict[str, pd.Series] = {}
         self.target_maps_: dict[str, pd.Series] = {}
         self.bin_edges_: np.ndarray | None = None
@@ -106,10 +109,28 @@ class PropertyFeatureTransformer(BaseEstimator, TransformerMixin):
         y = pd.Series(np.asarray(y, dtype=float), index=X.index)
         self.global_target_mean_ = float(np.nanmean(y))
 
-        # Numeric imputation values
+        # Numeric imputation values.
+        #
+        # A column can be entirely missing inside a training fold -- not a hypothetical:
+        # `development_type` is NA for every contract before 2011 by construction (the
+        # earliest legally-timed label window closes in 2010), so fold 0 (2001-2007) has
+        # no usable value at all. `float()` on that median raises
+        # `TypeError: float() argument must be ... not 'NAType'`, which used to abort the
+        # whole ablation. Fall back to 0.0 and record it: the model then sees a constant
+        # column, which carries no information rather than wrong information.
         for column in spec.numeric:
-            if column in X.columns:
-                self.impute_values_[column] = float(pd.to_numeric(X[column], errors="coerce").median())
+            if column not in X.columns:
+                continue
+            median = pd.to_numeric(X[column], errors="coerce").median()
+            if pd.isna(median):
+                self.impute_values_[column] = 0.0
+                self.degenerate_imputations_[column] = int(len(X))
+            else:
+                self.impute_values_[column] = float(median)
+        if self.degenerate_imputations_:
+            print(f"  note: no usable value in this training fold for "
+                  f"{sorted(self.degenerate_imputations_)}; imputed with a constant, so "
+                  "those columns carry no signal here")
 
         # Quantile bin edges for area
         if spec.bin_source in X.columns:
