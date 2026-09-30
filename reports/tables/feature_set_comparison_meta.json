@@ -1,0 +1,133 @@
+{
+  "rounds": 600,
+  "device": "cuda",
+  "configs": {
+    "full": [
+      "area_sqm",
+      "log_area",
+      "dist_cbd",
+      "log_dist_cbd",
+      "dist_train",
+      "dist_metro",
+      "dist_cbd_x_area",
+      "cash_rate_asof",
+      "cpi_yoy_asof",
+      "year_num",
+      "month_sin",
+      "month_cos",
+      "pc_med_price_3m",
+      "pc_med_unit_price_3m",
+      "pc_n_sales_3m",
+      "pc_n_months_observed_3m",
+      "pc_med_price_6m",
+      "pc_med_unit_price_6m",
+      "pc_n_sales_6m",
+      "pc_n_months_observed_6m",
+      "pc_med_price_12m",
+      "pc_med_unit_price_12m",
+      "pc_n_sales_12m",
+      "pc_price_iqr_ratio_12m",
+      "pc_n_months_observed_12m",
+      "pc_months_since_sale",
+      "pc_months_observed"
+    ],
+    "lean": [
+      "area_sqm",
+      "log_area",
+      "dist_cbd",
+      "log_dist_cbd",
+      "dist_train",
+      "dist_metro",
+      "dist_cbd_x_area",
+      "year_num",
+      "month_sin",
+      "month_cos",
+      "pc_med_price_3m",
+      "pc_med_unit_price_3m",
+      "pc_med_price_6m",
+      "pc_med_unit_price_6m",
+      "pc_med_price_12m",
+      "pc_med_unit_price_12m"
+    ],
+    "nocal": [
+      "area_sqm",
+      "log_area",
+      "dist_cbd",
+      "log_dist_cbd",
+      "dist_train",
+      "dist_metro",
+      "dist_cbd_x_area",
+      "pc_med_price_3m",
+      "pc_med_unit_price_3m",
+      "pc_med_price_6m",
+      "pc_med_unit_price_6m",
+      "pc_med_price_12m",
+      "pc_med_unit_price_12m"
+    ]
+  },
+  "excluded_negative_layers": [
+    "pc_price_iqr_ratio_12m",
+    "pc_n_sales_3m",
+    "pc_n_sales_6m",
+    "pc_n_sales_12m",
+    "pc_n_months_observed_3m",
+    "pc_n_months_observed_6m",
+    "pc_n_months_observed_12m",
+    "pc_months_since_sale",
+    "pc_months_observed",
+    "cash_rate_asof",
+    "cpi_yoy_asof"
+  ],
+  "calendar_block": [
+    "year_num",
+    "month_sin",
+    "month_cos"
+  ],
+  "folds": [
+    "fold0: train 2001-01..2007-12 | embargo 1m | valid 2008-02..2009-01",
+    "fold1: train 2001-01..2009-12 | embargo 1m | valid 2010-02..2011-01",
+    "fold2: train 2001-01..2011-12 | embargo 1m | valid 2012-02..2013-01",
+    "fold3: train 2001-01..2013-12 | embargo 1m | valid 2014-02..2015-01",
+    "fold4: train 2001-01..2015-12 | embargo 1m | valid 2016-02..2017-01",
+    "fold5: train 2001-01..2017-12 | embargo 1m | valid 2018-02..2019-01",
+    "fold6: train 2001-01..2019-12 | embargo 1m | valid 2020-02..2021-01",
+    "fold7: train 2001-01..2021-12 | embargo 1m | valid 2022-02..2022-12"
+  ],
+  "summary": [
+    {
+      "config": "lean",
+      "n_numeric_features": 16,
+      "valid_rmsle_mean": 0.3258,
+      "valid_rmsle_std": 0.0134,
+      "tail_rmsle_mean": 0.2993,
+      "holdout_rmsle": 0.323,
+      "seconds_mean": 17.2
+    },
+    {
+      "config": "full",
+      "n_numeric_features": 27,
+      "valid_rmsle_mean": 0.3262,
+      "valid_rmsle_std": 0.0146,
+      "tail_rmsle_mean": 0.2998,
+      "holdout_rmsle": 0.328,
+      "seconds_mean": 21.0
+    },
+    {
+      "config": "nocal",
+      "n_numeric_features": 13,
+      "valid_rmsle_mean": 0.3274,
+      "valid_rmsle_std": 0.0134,
+      "tail_rmsle_mean": 0.3005,
+      "holdout_rmsle": 0.3291,
+      "seconds_mean": 18.1
+    }
+  ],
+  "verdict": [
+    "At production settings (full training window, 600 rounds, early stopping), the lean model is better on the validation windows by 0.0004 RMSLE on average, winning 6 of 8 folds. The fold-to-fold standard deviation of that difference is 0.0023.",
+    "The mean difference is smaller than its own fold-to-fold standard deviation, so the direction is not consistently established at this noise level. The honest reading is that the three layers are NEUTRAL, not that removing them measurably improves accuracy.",
+    "On the one-shot 2023 holdout — one fit per configuration, so the only genuinely untouched comparison here — the lean model is better by 0.0050 RMSLE (0.3230 against 0.3280).",
+    "Positive control: removing the calendar block as well makes validation error +0.0015 worse on average, in 6 of 8 folds. The method does detect a block that matters, so a near-zero result for the other three is informative rather than a sign that the comparison is broken."
+  ],
+  "note": "Production settings on the FULL training window, unlike the layer ablation, which truncates to 400k rows and 200 rounds.",
+  "elapsed_seconds": 559.1
+}

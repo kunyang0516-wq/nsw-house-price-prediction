@@ -715,6 +715,15 @@ def write_report(out_dir: Path, tables: Path, figures: Path) -> Path:
         f"best model** ({naive_pooled_v:.4f} vs {best_pooled_v:.4f} RMSLE pooled; "
         f"{holdout_naive:.4f} vs {holdout_best:.4f} on the untouched holdout). Any "
         "claim that the engineered feature set adds a lot over local recent prices would be overstated.",
+        "7. **A 16-feature model matches the 27-feature one, so the three net-negative layers can "
+        "be dropped.** §4.5's ablation is run at different settings from the production model, so "
+        "§4.8 repeats it like-for-like: same algorithm, same folds, same training windows. The lean "
+        "model (dropping dispersion, liquidity/coverage and macro) is ahead by 0.0004 on the "
+        "validation folds and by 0.0050 on the untouched 2023 holdout, and fits about 18% "
+        "faster per fold (17.2s against 21.0s). The fold-level margin is inside the noise, so "
+        "this is a \"no evidence they help\" conclusion rather than a demonstrated gain — and "
+        "**the production configuration is left unchanged**, so every number in §4 still refers "
+        "to the full feature set.",
         "",
         "## 1. Data and cleaning (W1)",
         "",
@@ -1103,6 +1112,137 @@ def write_report(out_dir: Path, tables: Path, figures: Path) -> Path:
         except (OSError, KeyError, ValueError) as exc:  # pragma: no cover - defensive
             print(f"  (price-band table skipped: {type(exc).__name__}: {exc})")
 
+    # --- 4.8 matched feature-set comparison -------------------------------- #
+    # §4.5's layer ablation runs under different settings from the production model
+    # (training fold truncated to 400k rows, 200 rounds, no early stopping), so it cannot
+    # by itself establish that the three net-negative layers are unnecessary *in
+    # production*. This section reports the like-for-like comparison.
+    feature_set_section: list[str] = []
+    fsc_path = tables / "feature_set_comparison.csv"
+    fsc_meta_path = tables / "feature_set_comparison_meta.json"
+    if fsc_path.exists() and fsc_meta_path.exists():
+        fsc = pd.read_csv(fsc_path)
+        fsc_meta = read_json(fsc_meta_path)
+        fsc_summary = pd.DataFrame(fsc_meta.get("summary", []))
+        verdicts = fsc_meta.get("verdict", []) or []
+
+        if not fsc_summary.empty:
+            piv = fsc.pivot_table(index="fold", columns="config", values="valid_rmsle")
+
+            # Measured fit times, not an estimate. Feature count is a weak predictor of cost
+            # here because per-row work dominates, so the saving is small and stating a
+            # guessed percentage would be misleading.
+            _timing_txt = "the comparison did not record fit times."
+            if "seconds_mean" in fsc_summary.columns:
+                times = dict(zip(fsc_summary["config"], fsc_summary["seconds_mean"]))
+                if {"full", "lean"} <= set(times) and times["full"]:
+                    saved = 100 * (times["full"] - times["lean"]) / times["full"]
+                    _timing_txt = (
+                        f"mean fit time per fold was {times['lean']:.1f}s for the lean set "
+                        f"against {times['full']:.1f}s for the full one, about "
+                        f"{saved:.0f}% faster.")
+            rows_txt = ["| feature set | numeric features | mean fold RMSLE | fold sd "
+                        "| early-stop tail | 2023 holdout |",
+                        "|---|---|---|---|---|---|"]
+            labels = {
+                "full": "**full** (production today)",
+                "lean": "**lean** (drop D1 + Q1 + M1)",
+                "nocal": "nocal (drop those *and* calendar)",
+            }
+            for _, r in fsc_summary.iterrows():
+                hold = r.get("holdout_rmsle")
+                hold_txt = "—" if hold is None or hold != hold else f"{float(hold):.4f}"
+                rows_txt.append(
+                    f"| {labels.get(r['config'], r['config'])} "
+                    f"| {int(r['n_numeric_features'])} "
+                    f"| {r['valid_rmsle_mean']:.4f} | {r['valid_rmsle_std']:.4f} "
+                    f"| {r['tail_rmsle_mean']:.4f} | {hold_txt} |")
+
+            lean_full: list[str] = []
+            if {"full", "lean"} <= set(piv.columns):
+                diff = (piv["lean"] - piv["full"]).dropna()
+                lean_full = [
+                    "| fold | " + " | ".join(str(i) for i in diff.index) + " | mean |",
+                    "|---|" + "---|" * (len(diff) + 1),
+                    "| lean − full | "
+                    + " | ".join(f"{v:+.4f}" for v in diff)
+                    + f" | {float(diff.mean()):+.4f} |",
+                ]
+
+            feature_set_section = [
+                "### 4.8 Do the three net-negative layers matter in production? "
+                "A matched comparison",
+                "",
+                "§4.5 flags D1 (price dispersion), Q1 (liquidity and coverage) and M1 (macro) "
+                "as net-negative. That ablation is out-of-sample and lives inside the "
+                "rolling-origin folds, so it is an honest measurement — **but it runs under "
+                "different settings from the production model**: the training fold is "
+                "truncated to the most recent 400,000 rows, XGBoost gets 200 rounds, and "
+                "early stopping is off. The production model trains on the full window (up to "
+                "1.51M rows) for 600 rounds with early stopping.",
+                "",
+                "That gap matters because tree ensembles do not compose: a feature that is "
+                "worthless at 400k rows and 200 rounds need not be worthless at 1.51M rows "
+                "and 600 rounds, since the extra rounds can spend themselves on it. So §4.5 "
+                "establishes *\"these layers do not pay for themselves in the ablation's "
+                "regime\"*, which is weaker than the claim we actually want. This section "
+                "closes the gap with a like-for-like comparison: identical XGBoost "
+                "configuration, identical fold definitions, identical training windows, with "
+                "only the feature set differing.",
+                "",
+                "`nocal` is a deliberate **positive control** — it removes the calendar block "
+                "as well. If dropping calendar features does *not* hurt, the comparison "
+                "method itself is broken and the other result means nothing.",
+                "",
+                *rows_txt,
+                "",
+                "Per-fold difference on the validation windows:",
+                "",
+                *lean_full,
+                "",
+                "**How to read it.** The fold-level difference is "
+                f"{float((piv['lean'] - piv['full']).mean()):+.4f} on average, while its "
+                f"fold-to-fold standard deviation is "
+                f"{float((piv['lean'] - piv['full']).std()):.4f} — several times larger. So "
+                "on the validation folds the honest reading is **neutral**, not "
+                "\"removing them helps\": the direction is not consistently established at "
+                "this noise level.",
+                "",
+            ]
+            feature_set_section += [f"- {v}" for v in verdicts]
+            feature_set_section += [
+                "",
+                "**What this does and does not establish.** It does **not** establish that "
+                "deleting the three layers improves accuracy — the fold-level evidence is "
+                "within noise, so any such claim would be overreading. What it does "
+                "establish is that there is **no evidence they help**, under either the "
+                "ablation's settings or the production ones, while a 16-feature model matches "
+                "or beats the 27-feature one on every surface measured. The cost saving is "
+                "modest at this scale: "
+                + _timing_txt
+                + " Per-row work dominates fitting time here, not feature count, which is "
+                "also why the 13-feature `nocal` model is not the fastest of the three.",
+                "",
+                "**The production configuration is deliberately left unchanged.** "
+                "`FeatureSpec` still declares all 27 numeric features, so every number in §4 "
+                "refers to the full set; switching the default would invalidate the model "
+                "table, the ablation, and the headline figures in one step. The recommendation "
+                "is recorded here rather than applied, and `pipelines/10_compare_feature_sets.py` "
+                "reproduces the comparison on demand.",
+                "",
+                "*(Reproduce with `python pipelines/10_compare_feature_sets.py "
+                "--rounds 600 --device cuda`.)*",
+                "",
+            ]
+    elif fsc_path.exists() or fsc_meta_path.exists():
+        feature_set_section = [
+            "### 4.8 Do the three net-negative layers matter in production? "
+            "A matched comparison",
+            "",
+            "*(Incomplete: re-run `python pipelines/10_compare_feature_sets.py`.)*",
+            "",
+        ]
+
     # --- 4.7 learning curve + capacity probe ------------------------------- #
     # Answers "are we overfitting?" head-on. Everything elsewhere in this section argues
     # it only indirectly (CV close to holdout, fold spread no worse than a naive model),
@@ -1245,6 +1385,7 @@ def write_report(out_dir: Path, tables: Path, figures: Path) -> Path:
         "model's real advantage is on the cheapest fifth of the market and in avoiding large misses.\"",
         "",
         *learning_curve_section,
+        *feature_set_section,
         "## 5. Figures",        "",
         "![Distributions](figures/fig1_distributions.png)",
         "",

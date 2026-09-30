@@ -12,18 +12,32 @@ Numbered so the order is unambiguous. Run them in sequence:
 07_make_report.py       every figure + reports/final_report.md
 08_feature_value_test.py  layered ablation + permutation/time-reversal placebos
 09_learning_curve.py    learning curve + unregularised capacity probe (overfitting check)
+10_compare_feature_sets.py  matched A/B of feature sets at production settings
 run_chain.py            runs 01 -> 07 in one process, in order
 ```
 
-`09_learning_curve.py` is a diagnostic, not a pipeline stage, and is not part of
-`run_chain.py`. It measures overfitting directly, which nothing else does — every other
+`09` and `10` are **diagnostics, not pipeline stages**, and neither is part of
+`run_chain.py`.
+
+`09_learning_curve.py` measures overfitting directly, which nothing else does — every other
 check reasons from cross-validation-vs-holdout agreement without ever looking at training
 error. It writes `reports/tables/learning_curve.csv` and, with `--capacity-probe`,
 `learning_curve_probe.csv`; §4.7 of the report is generated from those two tables.
 
+`10_compare_feature_sets.py` exists because `08`'s layer ablation runs at different settings
+from the production model (training fold truncated to 400k rows, 200 rounds, no early
+stopping), so it cannot by itself establish that a net-negative layer is unnecessary *in
+production*. `10` repeats the comparison like-for-like, adds a positive control, and
+evaluates one untouched 2023 holdout per configuration. Its `full` / `lean` / `nocal`
+configurations and the recommendation they support are written up in §4.8 of the report.
+The production `FeatureSpec` is deliberately **unchanged**, so every model number in the
+report still refers to the full feature set — adopting the lean set would invalidate the
+model table, the ablation and the headline figures in one step.
+
 ```powershell
 .\.venv\Scripts\python.exe pipelines\09_learning_curve.py --fold 7 --xgb-device cuda
 .\.venv\Scripts\python.exe pipelines\09_learning_curve.py --fold 7 --capacity-probe --xgb-device cuda
+.\.venv\Scripts\python.exe pipelines\10_compare_feature_sets.py --rounds 600 --device cuda
 ```
 
 `--mode fixed-span` (the default) slides the training window's **start** so it always ends

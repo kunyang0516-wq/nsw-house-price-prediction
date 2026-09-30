@@ -49,6 +49,16 @@ STAGES: list[tuple[str, str, list[str], str]] = [
         "feature_ablation.csv", "feature_ablation_by_fold.csv",
         "feature_value_placebo.csv", "feature_value_demeaned.csv"],
      str(OUT_FEATURES_PARQUET)),
+    # Diagnostics, not pipeline stages (neither is part of run_chain.py), but §4.7 and §4.8
+    # of the report are generated from their tables, so a stale copy would silently put old
+    # numbers into fresh prose.
+    ("09 learning curve", "09_learning_curve.py", [
+        "learning_curve.csv", "learning_curve_probe.csv",
+        "learning_curve_meta.json", "learning_curve_probe_meta.json"],
+     str(OUT_FEATURES_PARQUET)),
+    ("10 feature sets", "10_compare_feature_sets.py", [
+        "feature_set_comparison.csv", "feature_set_comparison_meta.json"],
+     str(OUT_FEATURES_PARQUET)),
     ("07 report", "07_make_report.py", [
         "report_meta.json", str(REPORTS_DIR / "final_report.md")],
      str(OUT_FEATURES_PARQUET)),
